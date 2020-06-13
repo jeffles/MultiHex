@@ -40,10 +40,9 @@ unsigned long last_push_millis;
 unsigned long current_millis;
 
 int modeValue = 0;
-int sensorValue2 = 0;
-int sensorValue3 = 0;
-int sensorValue4 = 0;
-int val = 0;
+int speedValue = 0;
+int hueValue = 0;
+int brightValue = 0;
 
 // This function sets up the ledsand tells the controller about them
 void setup() {
@@ -66,17 +65,18 @@ void setup() {
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = { off, rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm };
+SimplePatternList gPatterns = { off, white, solid, sinelon, juggle, bpm, rainbow};
 
 uint8_t gCurrentPatternNumber = 0; // Index number of which pattern is current
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
+#define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
   
 void loop()
 {
-  sensorValue2 = analogRead(POT_INPUT_BR);
-  modeValue = analogRead(POT_INPUT_UL);
-  sensorValue3 = analogRead(POT_INPUT_UR);
-  sensorValue4 = analogRead(POT_INPUT_BL);
+  speedValue = analogRead(POT_INPUT_BR);
+  modeValue = analogRead(POT_INPUT_UL) / (1040 / ARRAY_SIZE( gPatterns));
+  hueValue = analogRead(POT_INPUT_UR) / 4;
+  brightValue = analogRead(POT_INPUT_BL) / 4;
   
 
   // Call the current pattern function once, updating the 'leds' array
@@ -93,42 +93,14 @@ void loop()
   EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
   //EVERY_N_SECONDS( 10 ) { nextPattern(); } // change patterns periodically
   selectPattern(modeValue);
-//  val = digitalRead(INPUT_PIN);
-//  if (val == LOW){
-//     current_millis = millis();
-//     Serial.println(last_push_millis);
-//     Serial.println(current_millis);
-//     Serial.println("Low");
-
-     
-//     if (last_push_millis + 30000 < current_millis and gCurrentPatternNumber!=0 ){
-//        turnOff();
-//        Serial.println("Off");
-//        last_push_millis=millis();
-//        
-//     } else if (last_push_millis + 1000 < current_millis) {
-//        nextPattern();
-////        Serial.println("Next");
-//        last_push_millis=millis();
-//     }
-     
-//  }
 }
 
-#define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
 void selectPattern(int modeValue)
 {
-  int range = 1024 / ARRAY_SIZE( gPatterns);
-  gCurrentPatternNumber = modeValue / range;
-  if (gCurrentPatternNumber == 0){
-    FastLED.clear ();
-  }
-  Serial.println(modeValue);
-  Serial.println(range);
-  Serial.println(gCurrentPatternNumber);
-  
+  gCurrentPatternNumber = modeValue;  
 }
+
 void nextPattern()
 {
   // add one to the current pattern number, and wrap around at the end
@@ -144,9 +116,7 @@ void turnOff()
 
 void off()
 {
-//  FastLED.clear ();
-  // FastLED's built-in rainbow generator
-  fill_rainbow( leds, NUM_LEDS, gHue, 7);
+  FastLED.clear ();
 }
 void rainbow() 
 {
@@ -176,6 +146,8 @@ void confetti()
   leds[pos] += CHSV( gHue + random8(64), 200, 255);
 }
 
+int simelon_pos = 0;
+unsigned long lastTick = 0;
 void sinelon()
 {
   // a colored dot sweeping back and forth, with fading trails
@@ -183,47 +155,64 @@ void sinelon()
   // int pos = beatsin16( 13, 0, NUM_LEDS-1 );
   unsigned long millis_2 = millis();
   //  int pos = (millis_2+100)/sensorValue % NUM_LEDS;
-  int pos = bseconds16() % NUM_LEDS;
-  leds[pos] += CHSV( gHue, 255, 192);
-  // leds[pos] += CHSV( gHue, 255, sensorValue/4);
+  Serial.println(millis());
+  Serial.println(speedValue);
+  Serial.println(lastTick);
+  if (millis() > speedValue + lastTick){
+     simelon_pos += 1;
+     simelon_pos = simelon_pos % NUM_LEDS;
+     lastTick = millis();    
+     Serial.println(simelon_pos);
+  }
+  Serial.print("Dots..");
+  Serial.println(simelon_pos);
+  
+  leds[simelon_pos] += CHSV( gHue, 255, brightValue);
 }
 
 void bpm()
 {
   // colored stripes pulsing at a defined Beats-Per-Minute (BPM)
-  uint8_t BeatsPerMinute = 62;
+  uint8_t BeatsPerMinute = speedValue /10;
+  
   CRGBPalette16 palette = PartyColors_p;
-  uint8_t beat = beatsin8( BeatsPerMinute, 64, 255);
-  for( int i = 0; i < NUM_LEDS; i++) { //9948
-    leds[i] = ColorFromPalette(palette, gHue+(i*2), beat-gHue+(i*10));
+  if (hueValue>200){
+    palette = CloudColors_p;
   }
+  else if (hueValue>150){
+    palette = LavaColors_p;
+  }
+  else if (hueValue > 100) {
+    palette = OceanColors_p;
+  }
+  else if (hueValue > 50) {
+    palette = ForestColors_p;
+  }
+
+  
+  uint8_t beat = beatsin8( BeatsPerMinute, 64, 255);
+  for( int i = 0; i < NUM_LEDS; i++) { 
+    //leds[i] = ColorFromPalette(palette, gHue+(i*2), beat-gHue+(i*10)); 
+    leds[i] = ColorFromPalette(palette, gHue+(i*2), (beat-gHue+(i*10))*brightValue/255); 
+
+  }
+  
 }
 
 void juggle() {
   // eight colored dots, weaving in and out of sync with each other
-  fadeToBlackBy( leds, NUM_LEDS, 20);
-  byte dothue = 0;
+  fadeToBlackBy( leds, NUM_LEDS, speedValue/25);
+  byte dothue = hueValue/5;
   for( int i = 0; i < 8; i++) {
-    leds[beatsin16( i+7, 0, NUM_LEDS-1 )] |= CHSV(dothue, 200, 255);
+    leds[beatsin16( i+7, 0, NUM_LEDS-1 )] |= CHSV(dothue, 200, min(200,brightValue));
     dothue += 32;
   }
 }
 
-// This function runs over and over, and is where you do the magic to light
-// your leds.
-void loop2() {
-   // Move a single white led 
-   for(int whiteLed = 0; whiteLed < NUM_LEDS; whiteLed = whiteLed + 1) {
-      // Turn our current led on to white, then show the leds
-      leds[whiteLed] = CRGB::White;
+void solid() {
+  fill_solid( leds, NUM_LEDS, CHSV(hueValue, 255, brightValue));
+}
 
-      // Show the leds (only one of which is set to white, from above)
-      FastLED.show();
-
-      // Wait a little bit
-      delay(1000);
-
-      // Turn our current led back to black for the next loop around
-      leds[whiteLed] = CRGB::Black;
-   }
+void white() {
+  fill_solid( leds, NUM_LEDS, CHSV(hueValue, 0, min(145,brightValue)));
 }
